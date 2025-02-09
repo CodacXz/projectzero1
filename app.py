@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 import requests
 import os
 import time
-import threading
 from collections import deque
 
 # Configure page
@@ -102,7 +101,7 @@ def main():
     # Manual refresh button
     if st.sidebar.button("🔄 Refresh Now"):
         sentiment_score, news_items = get_news_sentiment(symbol, force_refresh=True)
-        st.experimental_rerun()
+        st.rerun()  # Updated from experimental_rerun()
     
     # Show last fetch time
     if st.session_state.last_fetch_time:
@@ -129,7 +128,7 @@ def main():
         if (st.session_state.last_fetch_time is None or 
             time.time() - st.session_state.last_fetch_time >= REFRESH_INTERVAL):
             sentiment_score, news_items = get_news_sentiment(symbol)
-            st.experimental_rerun()
+            st.rerun()  # Updated from experimental_rerun()
     
     # Get cached data or fetch new data
     sentiment_score, news_items = get_news_sentiment(symbol)
@@ -154,8 +153,6 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
             
-            # ... rest of your display code ...
-            
             # News Display with "New" badge for recent news
             st.subheader("Latest News Analysis")
             for idx, news in enumerate(news_items):
@@ -177,8 +174,6 @@ def main():
         
         else:
             st.warning("No recent news data available for this stock.")
-        
-        # ... rest of your technical analysis code ...
 
     # Footer with auto-refresh status
     st.markdown("---")
