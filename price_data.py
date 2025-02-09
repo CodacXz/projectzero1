@@ -1,36 +1,35 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
 
 def fetch_price_data(symbol, period='1mo'):
-    """
-    Fetch price data from Yahoo Finance
-    Add .SA suffix for Saudi stocks
-    """
+    """Fetch price data from Yahoo Finance"""
     try:
-        ticker = yf.Ticker(f"{symbol}.SA")
+        # Add .SAU to symbol for Saudi stocks
+        ticker = yf.Ticker(f"{symbol}.SAU")
         df = ticker.history(period=period)
         return df
     except Exception as e:
-        print(f"Error fetching price data for {symbol}: {e}")
+        print(f"Error fetching data for {symbol}: {e}")
         return None
+
+def calculate_rsi(data, periods=14):
+    """Calculate RSI"""
+    delta = data['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=periods).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=periods).mean()
+    
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
 def calculate_technical_indicators(df):
     """Calculate various technical indicators"""
     if df is None or df.empty:
         return None
     
-    # Copy dataframe to avoid modifications
-    df = df.copy()
-    
     # RSI
-    def calculate_rsi(data, periods=14):
-        delta = data['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=periods).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=periods).mean()
-        rs = gain / loss
-        return 100 - (100 / (1 + rs))
+    df['RSI'] = calculate_rsi(df)
     
     # MACD
     def calculate_macd(data):
@@ -49,7 +48,6 @@ def calculate_technical_indicators(df):
         return upper, lower
     
     # Calculate indicators
-    df['RSI'] = calculate_rsi(df)
     df['MACD'], df['Signal'] = calculate_macd(df)
     df['BB_Upper'], df['BB_Lower'] = calculate_bollinger_bands(df)
     
