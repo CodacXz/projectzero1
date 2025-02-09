@@ -18,12 +18,26 @@ st.markdown("Analyze Saudi stocks with technical indicators and market data")
 
 # Sidebar
 st.sidebar.header("Settings")
-symbol = st.sidebar.text_input("Enter Stock Symbol (e.g., 2222):", "2222")
+symbol_input = st.sidebar.text_input("Enter Stock Symbol (e.g., 2222):", "2222")
+# Format the symbol for Saudi stocks
+symbol = f"{symbol_input}.SR"
+
 period = st.sidebar.selectbox(
     "Select Time Period:",
     ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
     index=2
 )
+
+# Add some information about symbol format
+st.sidebar.markdown("---")
+st.sidebar.markdown("ℹ️ **Note:** Enter the stock number without '.SR'")
+st.sidebar.markdown("Examples:")
+st.sidebar.markdown("- Saudi Aramco: 2222")
+st.sidebar.markdown("- Al Rajhi Bank: 1120")
+st.sidebar.markdown("- SABIC: 2010")
+
+# Debug information
+st.sidebar.markdown(f"Fetching data for: {symbol}")
 
 # Fetch and process data
 @st.cache_data(ttl=3600)  # Cache data for 1 hour
@@ -188,7 +202,13 @@ if df is not None:
         st.markdown(point)
 
 else:
-    st.error("Unable to fetch data for the specified symbol. Please check the symbol and try again.")
+    st.error(f"""
+    Unable to fetch data for symbol: {symbol}
+    Please check if:
+    1. The symbol is correct
+    2. You have internet connection
+    3. The market is open or has historical data
+    """)
 
 # Footer
 st.markdown("---")
