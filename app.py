@@ -1,215 +1,177 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import yfinance as yf
-from utils.price_data import fetch_price_data, calculate_technical_indicators
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+import requests
+import os
 
-# Set page config
+# Configure page
 st.set_page_config(
-    page_title="Stock Market Analysis",
+    page_title="Saudi Stock Analysis",
     page_icon="📈",
     layout="wide"
 )
 
-# Title and description
-st.title("📈 Stock Market Technical Analysis")
-st.markdown("Analyze Saudi stocks with technical indicators and market data")
+# Constants
+MARKETAUX_API_KEY = os.getenv('MARKETAUX_API_KEY')
+MARKETAUX_BASE_URL = "https://api.marketaux.com/v1/news/all"
 
-# Sidebar
-st.sidebar.header("Settings")
-symbol_input = st.sidebar.text_input("Enter Stock Symbol (e.g., 2222):", "2222")
-# Format the symbol for Saudi stocks
-symbol = f"{symbol_input}.SR"
+def get_news_sentiment(symbol):
+    """Fetch news sentiment for a given stock symbol"""
+    try:
+        clean_symbol = symbol.replace('.SR', '')
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=7)
+        
+        params = {
+            'api_token': MARKETAUX_API_KEY,
+            'symbols': clean_symbol,
+            'filter_entities': True,
+            'language': 'en',
+            'countries': 'sa',
+            'limit': 10,
+            'published_after': start_date.strftime('%Y-%m-%d'),
+            'published_before': end_date.strftime('%Y-%m-%d')
+        }
+        
+        response = requests.get(MARKETAUX_BASE_URL, params=params)
+        data = response.json()
+        
+        if 'data' not in data or not data['data']:
+            return None, []
+            
+        sentiments = [article['entities'][0]['sentiment_score'] 
+                     for article in data['data'] 
+                     if 'entities' in article and article['entities']]
+        
+        avg_sentiment = sum(sentiments) / len(sentiments) if sentiments else 0
+        
+        news_items = [{
+            'title': article['title'],
+            'sentiment': article['entities'][0]['sentiment_score'] if article['entities'] else 0,
+            'url': article['url'],
+            'published_at': article['published_at'],
+            'description': article.get('description', ''),
+            'keywords': article.get('entities', [])
+        } for article in data['data']]
+        
+        return avg_sentiment, news_items
+        
+    except Exception as e:
+        st.error(f"Error fetching sentiment data: {str(e)}")
+        return None, []
 
-period = st.sidebar.selectbox(
-    "Select Time Period:",
-    ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
-    index=2
-)
-
-# Add some information about symbol format
-st.sidebar.markdown("---")
-st.sidebar.markdown("ℹ️ **Note:** Enter the stock number without '.SR'")
-st.sidebar.markdown("Examples:")
-st.sidebar.markdown("- Saudi Aramco: 2222")
-st.sidebar.markdown("- Al Rajhi Bank: 1120")
-st.sidebar.markdown("- SABIC: 2010")
-
-# Debug information
-st.sidebar.markdown(f"Fetching data for: {symbol}")
-
-# Fetch and process data
-@st.cache_data(ttl=3600)  # Cache data for 1 hour
-def load_data(symbol, period):
-    df = fetch_price_data(symbol, period)
-    if df is not None:
-        return calculate_technical_indicators(df)
-    return None
-
-# Load data
-df = load_data(symbol, period)
-
-if df is not None:
-    # Create main price chart
-    fig = make_subplots(rows=3, cols=1, 
-                        shared_xaxes=True,
-                        vertical_spacing=0.05,
-                        row_heights=[0.5, 0.25, 0.25])
-
-    # Candlestick chart
-    fig.add_trace(
-        go.Candlestick(
-            x=df.index,
-            open=df['Open'],
-            high=df['High'],
-            low=df['Low'],
-            close=df['Close'],
-            name='Price'
-        ),
-        row=1, col=1
-    )
-
-    # Add Bollinger Bands
-    fig.add_trace(
-        go.Scatter(
-            x=df.index,
-            y=df['BB_Upper'],
-            name='BB Upper',
-            line=dict(color='gray', dash='dash')
-        ),
-        row=1, col=1
-    )
-
-    fig.add_trace(
-        go.Scatter(
-            x=df.index,
-            y=df['BB_Lower'],
-            name='BB Lower',
-            line=dict(color='gray', dash='dash'),
-            fill='tonexty'
-        ),
-        row=1, col=1
-    )
-
-    # MACD
-    fig.add_trace(
-        go.Scatter(
-            x=df.index,
-            y=df['MACD'],
-            name='MACD',
-            line=dict(color='blue')
-        ),
-        row=2, col=1
-    )
-
-    fig.add_trace(
-        go.Scatter(
-            x=df.index,
-            y=df['Signal'],
-            name='Signal',
-            line=dict(color='orange')
-        ),
-        row=2, col=1
-    )
-
-    # RSI
-    fig.add_trace(
-        go.Scatter(
-            x=df.index,
-            y=df['RSI'],
-            name='RSI',
-            line=dict(color='purple')
-        ),
-        row=3, col=1
-    )
-
-    # Add horizontal lines for RSI
-    fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
-    fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
-
-    # Update layout
-    fig.update_layout(
-        title=f"Technical Analysis for {symbol}",
-        xaxis_title="Date",
-        yaxis_title="Price",
-        height=800,
-        showlegend=True,
-        xaxis_rangeslider_visible=False
-    )
-
-    # Display the chart
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Display key statistics
-    col1, col2, col3 = st.columns(3)
+def main():
+    # Sidebar
+    st.sidebar.title("Settings")
+    symbol = st.sidebar.text_input("Enter Stock Symbol (e.g., 2222):", value="2222")
+    if not symbol.endswith('.SR'):
+        symbol = f"{symbol}.SR"
     
-    with col1:
-        st.metric(
-            "Current Price",
-            f"{df['Close'][-1]:.2f}",
-            f"{df['Close'].pct_change()[-1]*100:.2f}%"
-        )
-    
-    with col2:
-        st.metric(
-            "RSI",
-            f"{df['RSI'][-1]:.2f}",
-            "Overbought" if df['RSI'][-1] > 70 else "Oversold" if df['RSI'][-1] < 30 else "Neutral"
-        )
-    
-    with col3:
-        st.metric(
-            "Volume Ratio",
-            f"{df['Volume_Ratio'][-1]:.2f}",
-            f"{(df['Volume_Ratio'][-1] - 1)*100:.2f}% vs avg"
-        )
+    # Fetch company info
+    try:
+        ticker = yf.Ticker(symbol)
+        company_name = ticker.info.get('longName', 'Unknown Company')
+        st.sidebar.markdown(f"**Company:** {company_name}")
+    except:
+        st.sidebar.warning("Could not fetch company information")
 
-    # Technical Analysis Summary
-    st.subheader("Technical Analysis Summary")
+    # Main content
+    st.title("📰 Saudi Stock Market Analysis")
     
-    # Create analysis summary
-    analysis = []
+    # Section 1: Sentiment Analysis
+    st.header("Sentiment Analysis & News")
     
-    # RSI Analysis
-    rsi = df['RSI'][-1]
-    if rsi > 70:
-        analysis.append("🔴 RSI indicates overbought conditions")
-    elif rsi < 30:
-        analysis.append("🟢 RSI indicates oversold conditions")
+    sentiment_score, news_items = get_news_sentiment(symbol)
+    
+    if sentiment_score is not None:
+        # Create three columns
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            st.subheader("Overall Market Sentiment")
+            sentiment_color = 'green' if sentiment_score > 0.1 else 'red' if sentiment_score < -0.1 else 'gray'
+            st.markdown(f"""
+            <div style='text-align: center; padding: 20px; background-color: rgba(0,0,0,0.1); border-radius: 10px;'>
+                <h1 style='color: {sentiment_color}'>{sentiment_score:.2f}</h1>
+                <p>Sentiment Score</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.subheader("Interpretation")
+            if sentiment_score > 0.3:
+                st.success("Very Positive")
+            elif sentiment_score > 0.1:
+                st.success("Positive")
+            elif sentiment_score > -0.1:
+                st.info("Neutral")
+            elif sentiment_score > -0.3:
+                st.error("Negative")
+            else:
+                st.error("Very Negative")
+        
+        with col3:
+            st.subheader("Market Impact")
+            impact = "High" if abs(sentiment_score) > 0.3 else "Medium" if abs(sentiment_score) > 0.1 else "Low"
+            st.metric("Potential Impact", impact)
+    
+        # News Display
+        st.subheader("Latest News Analysis")
+        for idx, news in enumerate(news_items):
+            with st.expander(f"{news['title']} ({news['published_at'][:10]})"):
+                sentiment_emoji = "🟢" if news['sentiment'] > 0.1 else "🔴" if news['sentiment'] < -0.1 else "⚪"
+                st.markdown(f"""
+                **Sentiment Score:** {sentiment_emoji} {news['sentiment']:.2f}  
+                **Description:** {news['description']}  
+                **Source:** [Read more]({news['url']})
+                """)
+                
+                # Extract keywords/entities
+                if news['keywords']:
+                    keywords = [entity.get('name', '') for entity in news['keywords'] if entity.get('name')]
+                    st.markdown("**Keywords:** " + ", ".join(keywords))
+    
     else:
-        analysis.append("⚪ RSI is neutral")
+        st.warning("No recent news data available for this stock.")
+    
+    # Section 2: Technical Analysis based on News
+    st.markdown("---")
+    st.header("Technical Analysis Based on News")
+    
+    if news_items:
+        # Create analysis based on news sentiment
+        positive_news = sum(1 for news in news_items if news['sentiment'] > 0.1)
+        negative_news = sum(1 for news in news_items if news['sentiment'] < -0.1)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("News Sentiment Distribution")
+            sentiment_data = {
+                'Positive': positive_news,
+                'Neutral': len(news_items) - positive_news - negative_news,
+                'Negative': negative_news
+            }
+            st.bar_chart(sentiment_data)
+        
+        with col2:
+            st.subheader("Trading Signals")
+            if sentiment_score > 0.2:
+                st.success("🔥 Strong Buy Signal")
+            elif sentiment_score > 0:
+                st.success("📈 Buy Signal")
+            elif sentiment_score < -0.2:
+                st.error("💥 Strong Sell Signal")
+            elif sentiment_score < 0:
+                st.error("📉 Sell Signal")
+            else:
+                st.info("⚖️ Hold/Neutral Signal")
+    
+    # Footer
+    st.markdown("---")
+    st.caption("Data provided by MarketAux API")
 
-    # MACD Analysis
-    if df['MACD'][-1] > df['Signal'][-1] and df['MACD'][-2] <= df['Signal'][-2]:
-        analysis.append("🟢 MACD shows bullish crossover")
-    elif df['MACD'][-1] < df['Signal'][-1] and df['MACD'][-2] >= df['Signal'][-2]:
-        analysis.append("🔴 MACD shows bearish crossover")
-    else:
-        analysis.append("⚪ MACD shows no clear signal")
-
-    # Bollinger Bands Analysis
-    current_price = df['Close'][-1]
-    if current_price > df['BB_Upper'][-1]:
-        analysis.append("🔴 Price is above upper Bollinger Band - potential resistance")
-    elif current_price < df['BB_Lower'][-1]:
-        analysis.append("🟢 Price is below lower Bollinger Band - potential support")
-    else:
-        analysis.append("⚪ Price is within Bollinger Bands")
-
-    # Display analysis points
-    for point in analysis:
-        st.markdown(point)
-
-else:
-    st.error(f"""
-    Unable to fetch data for symbol: {symbol}
-    Please check if:
-    1. The symbol is correct
-    2. You have internet connection
-    3. The market is open or has historical data
-    """)
-
-# Footer
-st.markdown("---")
-st.markdown("Data provided by Yahoo Finance")
+if __name__ == "__main__":
+    main()
