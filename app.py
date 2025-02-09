@@ -19,9 +19,10 @@ if 'last_fetch_time' not in st.session_state:
     st.session_state.last_fetch_time = None
 if 'auto_refresh' not in st.session_state:
     st.session_state.auto_refresh = True
+if 'api_key' not in st.session_state:
+    st.session_state.api_key = os.getenv('MARKETAUX_API_KEY', '')
 
 # Constants
-MARKETAUX_API_KEY = os.getenv('MARKETAUX_API_KEY')
 MARKETAUX_BASE_URL = "https://api.marketaux.com/v1/news/all"
 REFRESH_INTERVAL = 300  # 5 minutes in seconds
 NEWS_CACHE_DURATION = 300  # 5 minutes in seconds
@@ -66,6 +67,10 @@ def get_stock_info(symbol):
 
 def get_news_sentiment(symbol, force_refresh=False):
     """Fetch news sentiment with caching"""
+    if not st.session_state.api_key:
+        st.error("Please enter your MarketAux API key in the sidebar.")
+        return 0, []
+
     current_time = time.time()
     
     # Check cache first
@@ -80,7 +85,7 @@ def get_news_sentiment(symbol, force_refresh=False):
             'symbols': symbol,
             'filter_entities': True,
             'language': 'en',
-            'api_token': MARKETAUX_API_KEY
+            'api_token': st.session_state.api_key
         }
         
         response = requests.get(MARKETAUX_BASE_URL, params=params)
@@ -100,6 +105,12 @@ def get_news_sentiment(symbol, force_refresh=False):
         
         return sentiment_score, news_items
     
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 401:
+            st.error("Invalid API key. Please check your MarketAux API key in the sidebar.")
+        else:
+            st.error(f"Error fetching news data: {str(e)}")
+        return 0, []
     except Exception as e:
         st.error(f"Error fetching news data: {str(e)}")
         return 0, []
@@ -107,6 +118,22 @@ def get_news_sentiment(symbol, force_refresh=False):
 def main():
     # Sidebar
     st.sidebar.title("Settings")
+    
+    # API Key input
+    st.sidebar.markdown("### API Settings")
+    api_key = st.sidebar.text_input(
+        "MarketAux API Key",
+        value=st.session_state.api_key,
+        type="password",
+        help="Enter your MarketAux API key. Get one at https://www.marketaux.com/"
+    )
+    
+    # Update API key in session state
+    if api_key != st.session_state.api_key:
+        st.session_state.api_key = api_key
+        st.session_state.news_cache = {}  # Clear cache when API key changes
+    
+    st.sidebar.markdown("---")
     
     # Stock symbol input with validation
     raw_symbol = st.sidebar.text_input("Enter Stock Symbol (e.g., 2222):", value="2222")
@@ -146,6 +173,10 @@ def main():
     # Main content
     st.title("📰 Saudi Stock Analysis")
     st.subheader(f"Analysis for {stock_info['name']} ({symbol})")
+    
+    if not st.session_state.api_key:
+        st.warning("⚠️ Please enter your MarketAux API key in the sidebar to fetch news data.")
+        st.stop()
     
     # Auto-refresh logic
     if st.session_state.auto_refresh:
