@@ -66,7 +66,43 @@ def get_stock_info(symbol):
 
 def get_news_sentiment(symbol, force_refresh=False):
     """Fetch news sentiment with caching"""
-    # ... existing code ...
+    current_time = time.time()
+    
+    # Check cache first
+    if not force_refresh and symbol in st.session_state.news_cache:
+        cached_data = st.session_state.news_cache[symbol]
+        if current_time - cached_data['timestamp'] < NEWS_CACHE_DURATION:
+            return cached_data['sentiment'], cached_data['news']
+    
+    try:
+        # Fetch news data
+        params = {
+            'symbols': symbol,
+            'filter_entities': True,
+            'language': 'en',
+            'api_token': MARKETAUX_API_KEY
+        }
+        
+        response = requests.get(MARKETAUX_BASE_URL, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        news_items = data.get('data', [])
+        sentiment_score = sum(float(news.get('sentiment', 0)) for news in news_items) / len(news_items) if news_items else 0
+        
+        # Update cache
+        st.session_state.news_cache[symbol] = {
+            'timestamp': current_time,
+            'sentiment': sentiment_score,
+            'news': news_items
+        }
+        st.session_state.last_fetch_time = current_time
+        
+        return sentiment_score, news_items
+    
+    except Exception as e:
+        st.error(f"Error fetching news data: {str(e)}")
+        return 0, []
 
 def main():
     # Sidebar
@@ -125,7 +161,20 @@ def main():
     main_container = st.container()
     
     with main_container:
-        # ... rest of your existing display code ...
+        # Display sentiment score
+        st.metric("Overall Sentiment Score", f"{sentiment_score:.2f}")
+        
+        # Display news items
+        if news_items:
+            for news in news_items:
+                with st.expander(news.get('title', 'No Title')):
+                    st.write(f"**Published:** {news.get('published_at', 'Unknown date')}")
+                    st.write(f"**Sentiment:** {float(news.get('sentiment', 0)):.2f}")
+                    st.write(news.get('description', 'No description available'))
+                    if news.get('url'):
+                        st.markdown(f"[Read more]({news['url']})")
+        else:
+            st.info("No news items found for this stock.")
 
 if __name__ == "__main__":
     main()
